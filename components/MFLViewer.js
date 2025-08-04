@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, Trophy, DollarSign, AlertCircle, RefreshCw, Activity, Calculator, BarChart, Database, Gavel } from 'lucide-react';
+import { Users, Trophy, DollarSign, AlertCircle, RefreshCw, Activity, Calculator, BarChart, Database, Gavel, TrendingUp } from 'lucide-react';
 import LeagueInfo from './LeagueInfo';
 import Rosters from './Rosters';
 import Standings from './Standings';
@@ -11,6 +11,7 @@ import TradeCalculator from './TradeCalculator';
 import AuctionDraft from './AuctionDraft';
 import DebugData from './DebugData';
 import RosterDiagnostic from './RosterDiagnostic';
+import MFLRankingsUploader from './MFLRankingsUploader';
 import { clearAllCaches, getCacheStatus } from './enhancedDataFetcher';
 
 export default function MFLViewer() {
@@ -522,6 +523,13 @@ export default function MFLViewer() {
             Auction Draft
           </button>
           <button
+            className={`px-4 py-2 font-semibold flex items-center gap-1 ${activeTab === 'rankings' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
+            onClick={() => setActiveTab('rankings')}
+          >
+            <TrendingUp size={16} />
+            Upload Rankings
+          </button>
+          <button
             className={`px-4 py-2 font-semibold ${activeTab === 'diagnostic' ? 'border-b-2 border-orange-600 text-orange-600' : 'text-gray-600 hover:text-gray-800'}`}
             onClick={() => setActiveTab('diagnostic')}
           >
@@ -574,6 +582,11 @@ export default function MFLViewer() {
                 rosters={data.rosters}
                 freeAgents={data.freeAgents}
                 playerDetails={data.playerDetails}
+              />
+            )}
+            {activeTab === 'rankings' && (
+              <MFLRankingsUploader
+                leagueId={leagueId}
               />
             )}
             {activeTab === 'diagnostic' && (

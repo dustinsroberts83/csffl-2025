@@ -1,5 +1,5 @@
 // components/DatabaseFreeAgents.js
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Download, RefreshCw, TrendingUp, ArrowUpDown, Database, CheckCircle, AlertCircle, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -73,27 +73,42 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
         rostered: rosteredCount || 0
       });
 
-      // Now get the actual data
-      let query = supabase
-        .from('players')
-        .select('*');
-      
-      // Filter by free agent status if needed
-      if (showOnlyFreeAgents) {
-        query = query.eq('is_free_agent', true);
+      // Fetch ALL data using pagination to bypass 1000 row limit
+      const pageSize = 1000;
+      let allData = [];
+      let page = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        let query = supabase
+          .from('players')
+          .select('*')
+          .range(page * pageSize, (page + 1) * pageSize - 1)
+          .order('auction_value', { ascending: false, nullsFirst: false });
+        
+        if (showOnlyFreeAgents) {
+          query = query.eq('is_free_agent', true);
+        }
+        
+        const { data, error } = await query;
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          hasMore = data.length === pageSize;
+          page++;
+        } else {
+          hasMore = false;
+        }
       }
-      
-      const { data, error } = await query
-        .order('auction_value', { ascending: false, nullsFirst: false })
-        .limit(500);
 
-      if (error) throw error;
-
-      setPlayers(data || []);
+      console.log(`Loaded ${allData.length} players from database`);
+      setPlayers(allData);
       
       // Get last sync time
-      if (data && data.length > 0) {
-        const lastUpdate = data.reduce((latest, player) => {
+      if (allData.length > 0) {
+        const lastUpdate = allData.reduce((latest, player) => {
           const playerUpdate = new Date(player.updated_at);
           return playerUpdate > latest ? playerUpdate : latest;
         }, new Date(0));
@@ -199,6 +214,20 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
   const handleMouseLeave = () => {
     setHoveredPlayer(null);
   };
+
+  // Create a map of Sleeper players for efficient lookup
+  const sleeperPlayerMap = useMemo(() => {
+    if (!sleeperPlayers) return new Map();
+    
+    const map = new Map();
+    Object.values(sleeperPlayers).forEach(sp => {
+      if (sp && sp.first_name && sp.last_name) {
+        const fullName = `${sp.first_name} ${sp.last_name}`.toLowerCase();
+        map.set(fullName, sp);
+      }
+    });
+    return map;
+  }, [sleeperPlayers]);
 
   // Filter and sort players
   const filteredPlayers = players.filter(player => {
@@ -394,68 +423,104 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
-            {sortedPlayers.map((player) => (
-              <tr 
-                key={player.mfl_id} 
-                className="hover:bg-gray-50 cursor-pointer"
-                onMouseEnter={(e) => handleMouseEnter(player, e)}
-                onMouseMove={handleMouseMove}
-                onMouseLeave={handleMouseLeave}
-              >
-                <td className="px-4 py-3">
-                  <div className="font-medium text-gray-900">{player.name}</div>
-                  {player.draft_year && (
-                    <div className="text-xs text-gray-500">
-                      {player.draft_year} Draft
-                      {player.draft_round && ` - Rd ${player.draft_round}.${player.draft_pick}`}
+            {sortedPlayers.map((player) => {
+              // Find sleeper data for this player
+              const convertedName = player.name.includes(',') 
+                ? player.name.split(',').map(p => p.trim()).reverse().join(' ')
+                : player.name;
+              
+              const sleeperData = sleeperPlayerMap.get(convertedName.toLowerCase());
+              
+              return (
+                <tr 
+                  key={player.mfl_id} 
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onMouseEnter={(e) => handleMouseEnter(player, e)}
+                  onMouseMove={handleMouseMove}
+                  onMouseLeave={handleMouseLeave}
+                >
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      {/* Player Image */}
+                      <div className="flex-shrink-0">
+                        {sleeperData?.player_id ? (
+                          <img
+                            src={`https://sleepercdn.com/content/nfl/players/${sleeperData.player_id}.jpg`}
+                            alt={player.name}
+                            className="w-10 h-10 rounded-full object-cover bg-gray-100"
+                            onError={(e) => {
+                              e.target.style.display = 'none';
+                              e.target.nextSibling.style.display = 'flex';
+                            }}
+                          />
+                        ) : null}
+                        <div 
+                          className={`w-10 h-10 rounded-full bg-gray-200 items-center justify-center ${
+                            sleeperData?.player_id ? 'hidden' : 'flex'
+                          }`}
+                        >
+                          <User className="text-gray-400" size={20} />
+                        </div>
+                      </div>
+                      
+                      {/* Player Name and Draft Info */}
+                      <div>
+                        <div className="font-medium text-gray-900">{player.name}</div>
+                        {player.draft_year && (
+                          <div className="text-xs text-gray-500">
+                            {player.draft_year} Draft
+                            {player.draft_round && ` - Rd ${player.draft_round}.${player.draft_pick}`}
+                          </div>
+                        )}
+                        {player.injury_status && (
+                          <div className="text-xs text-red-600 mt-1">
+                            {player.injury_status}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  )}
-                  {player.injury_status && (
-                    <div className="text-xs text-red-600 mt-1">
-                      {player.injury_status}
-                    </div>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`px-2 py-1 text-xs rounded ${positionColors[player.position] || 'bg-gray-100'}`}>
-                    {player.position}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center text-sm text-gray-700">{player.team || 'FA'}</td>
-                <td className="px-4 py-3 text-center text-sm text-gray-700">{player.age || '-'}</td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`px-2 py-1 text-xs rounded ${
-                    player.is_free_agent ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                  }`}>
-                    {player.is_free_agent ? 'Free Agent' : 'Rostered'}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className="text-lg font-bold text-green-600">
-                    ${player.auction_value || 1}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span className={`font-medium ${
-                    player.consensus_rank <= 50 ? 'text-green-600' :
-                    player.consensus_rank <= 100 ? 'text-blue-600' :
-                    player.consensus_rank <= 200 ? 'text-gray-600' :
-                    'text-gray-400'
-                  }`}>
-                    {player.consensus_rank || '-'}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-center text-sm text-gray-700">
-                  {player.sleeper_rank || '-'}
-                </td>
-                <td className="px-4 py-3 text-center text-sm text-gray-700">
-                  {player.espn_rank || '-'}
-                </td>
-                <td className="px-4 py-3 text-center text-sm text-gray-700">
-                  {player.dynasty_rank || '-'}
-                </td>
-              </tr>
-            ))}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`px-2 py-1 text-xs rounded ${positionColors[player.position] || 'bg-gray-100'}`}>
+                      {player.position}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center text-sm text-gray-700">{player.team || 'FA'}</td>
+                  <td className="px-4 py-3 text-center text-sm text-gray-700">{player.age || '-'}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`px-2 py-1 text-xs rounded ${
+                      player.is_free_agent ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                    }`}>
+                      {player.is_free_agent ? 'Free Agent' : 'Rostered'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="text-lg font-bold text-green-600">
+                      ${player.auction_value || 1}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`font-medium ${
+                      player.consensus_rank <= 50 ? 'text-green-600' :
+                      player.consensus_rank <= 100 ? 'text-blue-600' :
+                      player.consensus_rank <= 200 ? 'text-gray-600' :
+                      'text-gray-400'
+                    }`}>
+                      {player.consensus_rank || '-'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center text-sm text-gray-700">
+                    {player.sleeper_rank || '-'}
+                  </td>
+                  <td className="px-4 py-3 text-center text-sm text-gray-700">
+                    {player.espn_rank || '-'}
+                  </td>
+                  <td className="px-4 py-3 text-center text-sm text-gray-700">
+                    {player.dynasty_rank || '-'}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

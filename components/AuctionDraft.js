@@ -22,6 +22,158 @@ const SALARY_CAP = 500;
 const MIN_BID = 1;
 const ROSTER_SIZE = 26;
 
+// Player Hover Card Component
+function PlayerHoverCard({ player, sleeperPlayers, position }) {
+  const [imageError, setImageError] = useState(false);
+  
+  // Find matching Sleeper player for additional data and image
+  const convertedName = player.name.includes(',') 
+    ? player.name.split(',').map(p => p.trim()).reverse().join(' ')
+    : player.name;
+  
+  const sleeperData = sleeperPlayers ? Object.values(sleeperPlayers).find(sp => {
+    if (!sp || !sp.first_name || !sp.last_name) return false;
+    const sleeperName = `${sp.first_name} ${sp.last_name}`.toLowerCase();
+    return sleeperName === convertedName.toLowerCase();
+  }) : null;
+
+  // Calculate dynasty outlook
+  const age = player.age || sleeperData?.age || 25;
+  const playerPosition = player.position;
+  const primes = {
+    QB: { start: 26, peak: 29, end: 32 },
+    RB: { start: 22, peak: 24, end: 27 },
+    WR: { start: 24, peak: 26, end: 29 },
+    TE: { start: 25, peak: 27, end: 30 }
+  };
+  
+  const prime = primes[playerPosition];
+  let dynastyOutlook = { status: 'Unknown', color: 'text-gray-600' };
+  
+  if (prime) {
+    if (age < prime.start) dynastyOutlook = { status: 'Pre-Prime', color: 'text-green-600' };
+    else if (age >= prime.start && age <= prime.end) dynastyOutlook = { status: 'Prime Years', color: 'text-blue-600' };
+    else dynastyOutlook = { status: 'Post-Prime', color: 'text-red-600' };
+  }
+
+  return (
+    <div 
+      className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-4 w-80 pointer-events-none"
+      style={{
+        top: `${position.top}px`,
+        left: `${position.left}px`
+      }}
+    >
+      <div className="flex items-start gap-3">
+        {/* Player Image */}
+        <div className="flex-shrink-0">
+          {sleeperData?.player_id && !imageError ? (
+            <img
+              src={`https://sleepercdn.com/content/nfl/players/${sleeperData.player_id}.jpg`}
+              alt={player.name}
+              className="w-20 h-20 rounded-lg object-cover bg-gray-100"
+              onError={() => setImageError(true)}
+            />
+          ) : (
+            <div className="w-20 h-20 rounded-lg bg-gray-200 flex items-center justify-center">
+              <User className="text-gray-400" size={32} />
+            </div>
+          )}
+        </div>
+
+        {/* Player Info */}
+        <div className="flex-1">
+          <h3 className="font-bold text-lg text-gray-900">{player.name}</h3>
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`px-2 py-0.5 text-xs rounded ${positionColors[player.position] || 'bg-gray-100'}`}>
+              {player.position}
+            </span>
+            <span className="text-sm text-gray-600">{player.team || 'FA'}</span>
+            {player.age && <span className="text-sm text-gray-600">• Age {player.age}</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Rankings Section */}
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="bg-gray-50 p-2 rounded">
+          <div className="text-xs text-gray-600">Consensus Rank</div>
+          <div className="text-lg font-bold text-gray-900">{player.consensus_rank || '-'}</div>
+        </div>
+        <div className="bg-green-50 p-2 rounded">
+          <div className="text-xs text-gray-600">Auction Value</div>
+          <div className="text-lg font-bold text-green-600">${player.auction_value || 1}</div>
+        </div>
+      </div>
+
+      {/* Source Rankings */}
+      <div className="mt-3 space-y-1">
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">Sleeper Rank:</span>
+          <span className="font-medium">{player.sleeper_rank || '-'}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-600">ESPN Rank:</span>
+          <span className="font-medium">{player.espn_rank || '-'}</span>
+        </div>
+        {player.dynasty_rank && (
+          <div className="flex justify-between text-sm">
+            <span className="text-gray-600">Dynasty Rank:</span>
+            <span className="font-medium">{player.dynasty_rank}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Dynasty Outlook */}
+      <div className="mt-3 pt-3 border-t border-gray-200">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-600">Dynasty Outlook:</span>
+          <span className={`text-sm font-medium ${dynastyOutlook.color}`}>
+            {dynastyOutlook.status}
+          </span>
+        </div>
+      </div>
+
+      {/* Additional Info */}
+      {(player.injury_status || sleeperData?.injury_status) && (
+        <div className="mt-3 p-2 bg-red-50 rounded flex items-center gap-2">
+          <AlertCircle className="text-red-600" size={16} />
+          <span className="text-sm text-red-800">
+            {player.injury_status || sleeperData.injury_status}
+          </span>
+        </div>
+      )}
+
+      {/* Draft Info */}
+      {player.draft_year && (
+        <div className="mt-3 text-xs text-gray-500">
+          {player.draft_year} Draft
+          {player.draft_round && ` - Round ${player.draft_round}.${player.draft_pick}`}
+        </div>
+      )}
+
+      {/* Sleeper Metadata */}
+      {sleeperData && (
+        <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
+          {sleeperData.years_exp !== undefined && (
+            <div className="text-xs text-gray-600">
+              Experience: {sleeperData.years_exp} {sleeperData.years_exp === 1 ? 'year' : 'years'}
+            </div>
+          )}
+          {sleeperData.college && (
+            <div className="text-xs text-gray-600">College: {sleeperData.college}</div>
+          )}
+          {sleeperData.height && sleeperData.weight && (
+            <div className="text-xs text-gray-600">
+              {Math.floor(sleeperData.height / 12)}'{sleeperData.height % 12}" • {sleeperData.weight} lbs
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
   // State for database free agents
   const [databaseFreeAgents, setDatabaseFreeAgents] = useState([]);
@@ -84,6 +236,11 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
   const [bidAmount, setBidAmount] = useState('');
   const [selectedTeam, setSelectedTeam] = useState('');
   const [showUndoConfirm, setShowUndoConfirm] = useState(null);
+  const [hoveredPlayer, setHoveredPlayer] = useState(null);
+  const [cardPosition, setCardPosition] = useState({ top: 0, left: 0 });
+  const [sleeperPlayers, setSleeperPlayers] = useState(null);
+  const [useMFLRankings, setUseMFLRankings] = useState(false);
+  const [mflRankings, setMflRankings] = useState({});
 
   // Save to localStorage whenever draft state changes
   useEffect(() => {
@@ -96,16 +253,33 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
       try {
         setLoadingPlayers(true);
         
-        // Fetch all free agents from database
-        const { data, error } = await supabase
-          .from('players')
-          .select('*')
-          .eq('is_free_agent', true)
-          .order('auction_value', { ascending: false, nullsFirst: false });
+        // Fetch ALL free agents using pagination to bypass 1000 row limit
+        const pageSize = 1000;
+        let allData = [];
+        let page = 0;
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from('players')
+            .select('*')
+            .eq('is_free_agent', true)
+            .order('auction_value', { ascending: false, nullsFirst: false })
+            .range(page * pageSize, (page + 1) * pageSize - 1);
+          
+          if (error) throw error;
+          
+          if (data && data.length > 0) {
+            allData = [...allData, ...data];
+            hasMore = data.length === pageSize;
+            page++;
+          } else {
+            hasMore = false;
+          }
+        }
         
-        if (error) throw error;
-        
-        setDatabaseFreeAgents(data || []);
+        console.log(`Fetched ${allData.length} free agents from database`);
+        setDatabaseFreeAgents(allData);
       } catch (error) {
         console.error('Error fetching free agents:', error);
         // Fallback to prop if database fails
@@ -115,11 +289,63 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
       }
     };
     
+    const fetchSleeperPlayers = async () => {
+      try {
+        const response = await fetch('https://api.sleeper.app/v1/players/nfl');
+        if (response.ok) {
+          const data = await response.json();
+          setSleeperPlayers(data);
+        }
+      } catch (error) {
+        console.error('Error fetching Sleeper players:', error);
+      }
+    };
+    
     fetchDatabaseFreeAgents();
+    fetchSleeperPlayers();
+    fetchMFLRankings();
   }, [freeAgents]);
+
+  // Fetch MFL Rankings from database
+  const fetchMFLRankings = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('mfl_rankings')
+        .select('*')
+        .order('mfl_rank', { ascending: true });
+      
+      if (error) throw error;
+      
+      // Create a map for easy lookup by player name
+      const rankingsMap = {};
+      if (data) {
+        data.forEach(ranking => {
+          // Store by lowercase name for case-insensitive matching
+          rankingsMap[ranking.player_name.toLowerCase()] = ranking.mfl_rank;
+        });
+      }
+      setMflRankings(rankingsMap);
+    } catch (error) {
+      console.error('Error fetching MFL rankings:', error);
+    }
+  };
 
   // Get all drafted player IDs
   const draftedPlayerIds = new Set(draftState.draftPicks.map(pick => pick.playerId));
+
+  // Create a map of Sleeper players for efficient lookup
+  const sleeperPlayerMap = useMemo(() => {
+    if (!sleeperPlayers) return new Map();
+    
+    const map = new Map();
+    Object.values(sleeperPlayers).forEach(sp => {
+      if (sp && sp.first_name && sp.last_name) {
+        const fullName = `${sp.first_name} ${sp.last_name}`.toLowerCase();
+        map.set(fullName, sp);
+      }
+    });
+    return map;
+  }, [sleeperPlayers]);
 
   // Filter available players
   const availablePlayers = useMemo(() => {
@@ -152,8 +378,20 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
       }
       grouped[player.position].push(player);
     });
+    
+    // Sort each position group by MFL rank if enabled
+    if (useMFLRankings) {
+      Object.keys(grouped).forEach(position => {
+        grouped[position].sort((a, b) => {
+          const rankA = mflRankings[a.name.toLowerCase()] || 9999;
+          const rankB = mflRankings[b.name.toLowerCase()] || 9999;
+          return rankA - rankB;
+        });
+      });
+    }
+    
     return grouped;
-  }, [availablePlayers]);
+  }, [availablePlayers, useMFLRankings, mflRankings]);
 
   // Get teams that can still bid
   const activeTeams = useMemo(() => {
@@ -329,6 +567,39 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
     URL.revokeObjectURL(url);
   };
 
+  // Handle mouse events for hover card
+  const handleMouseEnter = (player, event) => {
+    setHoveredPlayer(player);
+  };
+
+  const handleMouseMove = (event) => {
+    if (!hoveredPlayer) return;
+    
+    const cardWidth = 320;
+    const cardHeight = 450; // Slightly taller to accommodate image
+    const offset = 10;
+    
+    // Get mouse position relative to viewport
+    let left = event.clientX + offset;
+    let top = event.clientY + offset;
+    
+    // Keep card within viewport horizontally
+    if (left + cardWidth > window.innerWidth) {
+      left = event.clientX - cardWidth - offset;
+    }
+    
+    // Keep card within viewport vertically
+    if (top + cardHeight > window.innerHeight) {
+      top = window.innerHeight - cardHeight - offset;
+    }
+    
+    setCardPosition({ top, left });
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredPlayer(null);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -396,24 +667,45 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
             <h3 className="font-semibold text-gray-800 mb-3">Make a Pick</h3>
             
             {/* Search and Filters */}
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <input
-                type="text"
-                placeholder="Search players..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-500"
-              />
-              <select
-                value={positionFilter}
-                onChange={(e) => setPositionFilter(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
-              >
-                <option value="ALL">All Positions</option>
-                {Object.keys(positionColors).map(pos => (
-                  <option key={pos} value={pos}>{pos}</option>
-                ))}
-              </select>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  placeholder="Search players..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-500"
+                />
+                <select
+                  value={positionFilter}
+                  onChange={(e) => setPositionFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+                >
+                  <option value="ALL">All Positions</option>
+                  {Object.keys(positionColors).map(pos => (
+                    <option key={pos} value={pos}>{pos}</option>
+                  ))}
+                </select>
+              </div>
+              
+              {/* MFL Rankings Toggle */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="useMFLRankings"
+                  checked={useMFLRankings}
+                  onChange={(e) => setUseMFLRankings(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="useMFLRankings" className="text-sm text-gray-700 cursor-pointer">
+                  Sort by MFL Expert Rankings
+                </label>
+                {Object.keys(mflRankings).length > 0 && (
+                  <span className="text-xs text-gray-500">
+                    ({Object.keys(mflRankings).length} rankings loaded)
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Selected Player */}
@@ -491,7 +783,7 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
             ) : (
               <div className="max-h-96 overflow-y-auto">
                 <div className="text-sm text-gray-600 mb-2">
-                  Showing {availablePlayers.length} free agents
+                  Showing {availablePlayers.length} of {databaseFreeAgents.length} total free agents
                 </div>
                 {Object.entries(playersByPosition).map(([position, players]) => (
                   <div key={position} className="mb-4">
@@ -501,6 +793,9 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
                         <div
                           key={player.mfl_id}
                           onClick={() => setSelectedPlayer(player)}
+                          onMouseEnter={(e) => handleMouseEnter(player, e)}
+                          onMouseMove={handleMouseMove}
+                          onMouseLeave={handleMouseLeave}
                           className={`p-2 rounded border cursor-pointer hover:bg-gray-50 ${
                             selectedPlayer?.mfl_id === player.mfl_id ? 'border-blue-400 bg-blue-50' : 'border-gray-200'
                           }`}
@@ -515,6 +810,11 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
                               <div className="text-sm font-medium text-green-600">${player.auction_value || 1}</div>
                               {player.consensus_rank && (
                                 <div className="text-xs text-gray-500">Rank: {player.consensus_rank}</div>
+                              )}
+                              {useMFLRankings && mflRankings[player.name.toLowerCase()] && (
+                                <div className="text-xs text-blue-600">
+                                  MFL: #{mflRankings[player.name.toLowerCase()]}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -599,6 +899,15 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
           )}
         </div>
       </div>
+
+      {/* Player Card Hover */}
+      {hoveredPlayer && (
+        <PlayerHoverCard 
+          player={hoveredPlayer} 
+          sleeperPlayers={sleeperPlayers} 
+          position={cardPosition}
+        />
+      )}
     </div>
   );
 }
