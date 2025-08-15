@@ -1,7 +1,9 @@
 // components/DatabaseFreeAgents.js
-import { useState, useEffect, useMemo } from 'react';
-import { Download, RefreshCw, TrendingUp, ArrowUpDown, Database, CheckCircle, AlertCircle, User } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Download, RefreshCw, TrendingUp, ArrowUpDown, CheckCircle, AlertCircle, User } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import PlayerHoverCard from './PlayerHoverCard';
+import PlayerImage from './PlayerImage';
 
 const positionColors = {
   QB: 'bg-red-100 text-red-800',
@@ -21,33 +23,43 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [sortBy, setSortBy] = useState('auction_value');
-  const [sortOrder, setSortOrder] = useState('desc');
+  const [sortBy, setSortBy] = useState('fantasypros_rank');
+  const [sortOrder, setSortOrder] = useState('asc');
   const [positionFilter, setPositionFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [showOnlyFreeAgents, setShowOnlyFreeAgents] = useState(true);
   const [lastSync, setLastSync] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
   const [stats, setStats] = useState({ total: 0, freeAgents: 0, rostered: 0 });
-  const [hoveredPlayer, setHoveredPlayer] = useState(null);
-  const [cardPosition, setCardPosition] = useState({ top: 0, left: 0 });
-  const [sleeperPlayers, setSleeperPlayers] = useState(null);
+  const [syncingFantasyPros, setSyncingFantasyPros] = useState(false);
+  const [lastFantasyProsSync, setLastFantasyProsSync] = useState(null);
+  const [mflRankings, setMflRankings] = useState({});
 
   // Load free agents from database
   useEffect(() => {
     loadFreeAgents();
-    fetchSleeperPlayers();
+    fetchMFLRankings();
   }, [leagueId, showOnlyFreeAgents]);
 
-  const fetchSleeperPlayers = async () => {
+  const fetchMFLRankings = async () => {
     try {
-      const response = await fetch('https://api.sleeper.app/v1/players/nfl');
-      if (response.ok) {
-        const data = await response.json();
-        setSleeperPlayers(data);
+      const { data, error } = await supabase
+        .from('mfl_rankings')
+        .select('*')
+        .order('mfl_rank', { ascending: true });
+      
+      if (error) throw error;
+      
+      // Create a map for easy lookup by player name
+      const rankingsMap = {};
+      if (data) {
+        data.forEach(ranking => {
+          rankingsMap[ranking.player_name.toLowerCase()] = ranking.mfl_rank;
+        });
       }
+      setMflRankings(rankingsMap);
     } catch (error) {
-      console.error('Error fetching Sleeper players:', error);
+      console.error('Error fetching MFL rankings:', error);
     }
   };
 
@@ -84,7 +96,7 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
           .from('players')
           .select('*')
           .range(page * pageSize, (page + 1) * pageSize - 1)
-          .order('auction_value', { ascending: false, nullsFirst: false });
+          .order('fantasypros_rank', { ascending: true, nullsFirst: false });
         
         if (showOnlyFreeAgents) {
           query = query.eq('is_free_agent', true);
@@ -122,12 +134,12 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
     }
   };
 
-  // Sync rankings from external sources
-  const syncRankings = async () => {
+  // Sync FantasyPros rankings
+  const syncFantasyProsRankings = async () => {
     try {
-      setSyncStatus({ status: 'syncing', message: 'Fetching rankings from Sleeper, ESPN, and other sources...' });
+      setSyncingFantasyPros(true);
       
-      const response = await fetch('/api/update-rankings', {
+      const response = await fetch('/api/fantasypros', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ leagueId })
@@ -136,37 +148,32 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
       const result = await response.json();
       
       if (result.success) {
-        setSyncStatus({ 
-          status: 'success', 
-          message: `Rankings updated! ${result.summary.consensusRankings} consensus rankings calculated from ${Object.keys(result.summary).length - 1} sources.` 
-        });
+        setLastFantasyProsSync(new Date());
         await loadFreeAgents();
+        
+        alert(`FantasyPros sync successful!\nUpdated: ${result.updated} players\nMatched: ${result.matched} players`);
       } else {
-        throw new Error(result.error || 'Failed to update rankings');
+        throw new Error(result.error || 'Failed to sync FantasyPros rankings');
       }
-      
-      setTimeout(() => setSyncStatus(null), 5000);
-    } catch (err) {
-      console.error('Rankings sync error:', err);
-      setSyncStatus({ status: 'error', message: err.message });
-      setTimeout(() => setSyncStatus(null), 5000);
+    } catch (error) {
+      console.error('FantasyPros sync error:', error);
+      alert(`Failed to sync FantasyPros rankings: ${error.message}`);
+    } finally {
+      setSyncingFantasyPros(false);
     }
   };
 
   // Export to CSV
   const exportToCSV = () => {
-    const headers = ['Name', 'Position', 'Team', 'Age', 'Status', 'Auction Value', 'Consensus Rank', 'Sleeper Rank', 'ESPN Rank', 'Dynasty Rank'];
+    const headers = ['Name', 'Position', 'Team', 'Age', 'FantasyPros ECR', 'FantasyPros Tier', 'MFL Rank'];
     const rows = sortedPlayers.map(p => [
       p.name,
       p.position,
       p.team || 'FA',
       p.age || '',
-      p.is_free_agent ? 'Free Agent' : 'Rostered',
-      p.auction_value,
-      p.consensus_rank || '',
-      p.sleeper_rank || '',
-      p.espn_rank || '',
-      p.dynasty_rank || ''
+      p.fantasypros_rank || '',
+      p.fantasypros_tier || '',
+      mflRankings[p.name.toLowerCase()] || ''
     ]);
     
     const csvContent = [headers, ...rows]
@@ -181,53 +188,6 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
     link.click();
     URL.revokeObjectURL(url);
   };
-
-  // Handle mouse events for hover card
-  const handleMouseEnter = (player, event) => {
-    setHoveredPlayer(player);
-  };
-
-  const handleMouseMove = (event) => {
-    if (!hoveredPlayer) return;
-    
-    const cardWidth = 320;
-    const cardHeight = 400; // Approximate height
-    const offset = 10; // Distance from cursor - reduced from original
-    
-    // Get mouse position relative to viewport
-    let left = event.clientX + offset;
-    let top = event.clientY + offset;
-    
-    // Keep card within viewport horizontally
-    if (left + cardWidth > window.innerWidth) {
-      left = event.clientX - cardWidth - offset;
-    }
-    
-    // Keep card within viewport vertically
-    if (top + cardHeight > window.innerHeight) {
-      top = window.innerHeight - cardHeight - offset;
-    }
-    
-    setCardPosition({ top, left });
-  };
-
-  const handleMouseLeave = () => {
-    setHoveredPlayer(null);
-  };
-
-  // Create a map of Sleeper players for efficient lookup
-  const sleeperPlayerMap = useMemo(() => {
-    if (!sleeperPlayers) return new Map();
-    
-    const map = new Map();
-    Object.values(sleeperPlayers).forEach(sp => {
-      if (sp && sp.first_name && sp.last_name) {
-        const fullName = `${sp.first_name} ${sp.last_name}`.toLowerCase();
-        map.set(fullName, sp);
-      }
-    });
-    return map;
-  }, [sleeperPlayers]);
 
   // Filter and sort players
   const filteredPlayers = players.filter(player => {
@@ -244,15 +204,15 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
         return sortOrder === 'asc' ? 
           a.name.localeCompare(b.name) : 
           b.name.localeCompare(a.name);
-      case 'ecr_rank':
-      case 'dynasty_rank':
-      case 'auction_value':
+      case 'fantasypros_rank':
+      case 'fantasypros_tier':
       case 'age':
-      case 'consensus_rank':
-      case 'sleeper_rank':
-      case 'espn_rank':
         aVal = a[sortBy] || 999;
         bVal = b[sortBy] || 999;
+        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+      case 'mfl_rank':
+        aVal = mflRankings[a.name.toLowerCase()] || 999;
+        bVal = mflRankings[b.name.toLowerCase()] || 999;
         return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
       default:
         return 0;
@@ -264,7 +224,7 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
       setSortBy(field);
-      setSortOrder(field === 'auction_value' ? 'desc' : 'asc');
+      setSortOrder('asc');
     }
   };
 
@@ -304,12 +264,21 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={syncRankings}
-            disabled={syncStatus?.status === 'syncing'}
-            className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 flex items-center gap-1 text-sm"
+            onClick={syncFantasyProsRankings}
+            disabled={syncingFantasyPros}
+            className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1 text-sm"
           >
-            <TrendingUp size={16} />
-            Update Rankings
+            {syncingFantasyPros ? (
+              <>
+                <RefreshCw className="animate-spin" size={16} />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <TrendingUp size={16} />
+                Sync FantasyPros
+              </>
+            )}
           </button>
           <button
             onClick={exportToCSV}
@@ -332,6 +301,12 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
           {syncStatus.status === 'success' && <CheckCircle size={16} />}
           {syncStatus.status === 'error' && <AlertCircle size={16} />}
           {syncStatus.message}
+        </div>
+      )}
+
+      {lastFantasyProsSync && (
+        <div className="text-xs text-gray-500">
+          FantasyPros last synced: {lastFantasyProsSync.toLocaleTimeString()}
         </div>
       )}
 
@@ -394,131 +369,91 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
                   Age <ArrowUpDown size={14} className="ml-1" />
                 </button>
               </th>
-              <th className="px-4 py-3 text-center text-gray-700">Status</th>
               <th className="px-4 py-3 text-center">
-                <button onClick={() => toggleSort('auction_value')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
-                  Value <ArrowUpDown size={14} className="ml-1" />
+                <button onClick={() => toggleSort('fantasypros_rank')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
+                  FP ECR <ArrowUpDown size={14} className="ml-1" />
                 </button>
               </th>
               <th className="px-4 py-3 text-center">
-                <button onClick={() => toggleSort('consensus_rank')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
-                  Consensus <ArrowUpDown size={14} className="ml-1" />
+                <button onClick={() => toggleSort('mfl_rank')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
+                  MFL Rank <ArrowUpDown size={14} className="ml-1" />
                 </button>
               </th>
               <th className="px-4 py-3 text-center">
-                <button onClick={() => toggleSort('sleeper_rank')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
-                  Sleeper <ArrowUpDown size={14} className="ml-1" />
-                </button>
-              </th>
-              <th className="px-4 py-3 text-center">
-                <button onClick={() => toggleSort('espn_rank')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
-                  ESPN <ArrowUpDown size={14} className="ml-1" />
-                </button>
-              </th>
-              <th className="px-4 py-3 text-center">
-                <button onClick={() => toggleSort('dynasty_rank')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
-                  Dynasty <ArrowUpDown size={14} className="ml-1" />
+                <button onClick={() => toggleSort('fantasypros_tier')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
+                  FP Tier <ArrowUpDown size={14} className="ml-1" />
                 </button>
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
             {sortedPlayers.map((player) => {
-              // Find sleeper data for this player
-              const convertedName = player.name.includes(',') 
-                ? player.name.split(',').map(p => p.trim()).reverse().join(' ')
-                : player.name;
-              
-              const sleeperData = sleeperPlayerMap.get(convertedName.toLowerCase());
+              const mflRank = mflRankings[player.name.toLowerCase()];
               
               return (
-                <tr 
+                <PlayerHoverCard 
                   key={player.mfl_id} 
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onMouseEnter={(e) => handleMouseEnter(player, e)}
-                  onMouseMove={handleMouseMove}
-                  onMouseLeave={handleMouseLeave}
+                  player={player} 
+                  mflRank={mflRank}
                 >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      {/* Player Image */}
-                      <div className="flex-shrink-0">
-                        {sleeperData?.player_id ? (
-                          <img
-                            src={`https://sleepercdn.com/content/nfl/players/${sleeperData.player_id}.jpg`}
-                            alt={player.name}
-                            className="w-10 h-10 rounded-full object-cover bg-gray-100"
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                              e.target.nextSibling.style.display = 'flex';
-                            }}
-                          />
-                        ) : null}
-                        <div 
-                          className={`w-10 h-10 rounded-full bg-gray-200 items-center justify-center ${
-                            sleeperData?.player_id ? 'hidden' : 'flex'
-                          }`}
-                        >
-                          <User className="text-gray-400" size={20} />
+                  <tr className="hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <PlayerImage player={player} size={40} />
+                        
+                        <div>
+                          <div className="font-medium text-gray-900">{player.name}</div>
+                          {player.draft_year && (
+                            <div className="text-xs text-gray-500">
+                              {player.draft_year} Draft
+                              {player.draft_round && ` - Rd ${player.draft_round}.${player.draft_pick}`}
+                            </div>
+                          )}
+                          {player.injury_status && (
+                            <div className="text-xs text-red-600 mt-1">
+                              {player.injury_status}
+                            </div>
+                          )}
                         </div>
                       </div>
-                      
-                      {/* Player Name and Draft Info */}
-                      <div>
-                        <div className="font-medium text-gray-900">{player.name}</div>
-                        {player.draft_year && (
-                          <div className="text-xs text-gray-500">
-                            {player.draft_year} Draft
-                            {player.draft_round && ` - Rd ${player.draft_round}.${player.draft_pick}`}
-                          </div>
-                        )}
-                        {player.injury_status && (
-                          <div className="text-xs text-red-600 mt-1">
-                            {player.injury_status}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 text-xs rounded ${positionColors[player.position] || 'bg-gray-100'}`}>
-                      {player.position}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center text-sm text-gray-700">{player.team || 'FA'}</td>
-                  <td className="px-4 py-3 text-center text-sm text-gray-700">{player.age || '-'}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 text-xs rounded ${
-                      player.is_free_agent ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {player.is_free_agent ? 'Free Agent' : 'Rostered'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className="text-lg font-bold text-green-600">
-                      ${player.auction_value || 1}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`font-medium ${
-                      player.consensus_rank <= 50 ? 'text-green-600' :
-                      player.consensus_rank <= 100 ? 'text-blue-600' :
-                      player.consensus_rank <= 200 ? 'text-gray-600' :
-                      'text-gray-400'
-                    }`}>
-                      {player.consensus_rank || '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center text-sm text-gray-700">
-                    {player.sleeper_rank || '-'}
-                  </td>
-                  <td className="px-4 py-3 text-center text-sm text-gray-700">
-                    {player.espn_rank || '-'}
-                  </td>
-                  <td className="px-4 py-3 text-center text-sm text-gray-700">
-                    {player.dynasty_rank || '-'}
-                  </td>
-                </tr>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-1 text-xs rounded ${positionColors[player.position] || 'bg-gray-100'}`}>
+                        {player.position}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center text-sm text-gray-700">{player.team || 'FA'}</td>
+                    <td className="px-4 py-3 text-center text-sm text-gray-700">{player.age || '-'}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`font-medium ${
+                        player.fantasypros_rank <= 50 ? 'text-purple-600' :
+                        player.fantasypros_rank <= 100 ? 'text-blue-600' :
+                        player.fantasypros_rank <= 200 ? 'text-gray-600' :
+                        'text-gray-400'
+                      }`}>
+                        {player.fantasypros_rank || '-'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {mflRank ? (
+                        <span className="font-medium text-blue-600">
+                          {mflRank}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300">-</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center text-sm">
+                      {player.fantasypros_tier ? (
+                        <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+                          Tier {player.fantasypros_tier}
+                        </span>
+                      ) : (
+                        '-'
+                      )}
+                    </td>
+                  </tr>
+                </PlayerHoverCard>
               );
             })}
           </tbody>
@@ -536,126 +471,18 @@ export default function DatabaseFreeAgents({ leagueId, year }) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-800">
           <ul className="space-y-1">
             <li>• Real-time roster status (free agent vs rostered)</li>
-            <li>• Consensus rankings from multiple sources</li>
-            <li>• Dynasty-specific valuations and age curves</li>
-            <li>• Automatic auction value calculations</li>
+            <li>• FantasyPros Expert Consensus Rankings (ECR)</li>
+            <li>• FantasyPros tier-based rankings</li>
+            <li>• MFL Expert Rankings</li>
           </ul>
           <ul className="space-y-1">
-            <li>• Sleeper API integration for search rankings</li>
-            <li>• ESPN rankings when available</li>
-            <li>• Historical tracking of player values</li>
+            <li>• Injury status tracking</li>
+            <li>• Draft capital information</li>
             <li>• Fast loading with database queries</li>
+            <li>• Hover over players for detailed info</li>
           </ul>
         </div>
       </div>
-
-      {/* Player Card Hover */}
-      {hoveredPlayer && sleeperPlayers && (
-        <div 
-          className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-4 w-80 pointer-events-none"
-          style={{
-            top: `${cardPosition.top}px`,
-            left: `${cardPosition.left}px`
-          }}
-        >
-          {(() => {
-            // Find matching Sleeper player for additional data
-            const convertedName = hoveredPlayer.name.includes(',') 
-              ? hoveredPlayer.name.split(',').map(p => p.trim()).reverse().join(' ')
-              : hoveredPlayer.name;
-            
-            const sleeperData = Object.values(sleeperPlayers).find(sp => {
-              if (!sp || !sp.first_name || !sp.last_name) return false;
-              const sleeperName = `${sp.first_name} ${sp.last_name}`.toLowerCase();
-              return sleeperName === convertedName.toLowerCase();
-            });
-
-            // Calculate dynasty outlook
-            const age = hoveredPlayer.age || sleeperData?.age || 25;
-            const position = hoveredPlayer.position;
-            const primes = {
-              QB: { start: 26, peak: 29, end: 32 },
-              RB: { start: 22, peak: 24, end: 27 },
-              WR: { start: 24, peak: 26, end: 29 },
-              TE: { start: 25, peak: 27, end: 30 }
-            };
-            
-            const prime = primes[position];
-            let dynastyOutlook = { status: 'Unknown', color: 'text-gray-600' };
-            
-            if (prime) {
-              if (age < prime.start) dynastyOutlook = { status: 'Pre-Prime', color: 'text-green-600' };
-              else if (age >= prime.start && age <= prime.end) dynastyOutlook = { status: 'Prime Years', color: 'text-blue-600' };
-              else dynastyOutlook = { status: 'Post-Prime', color: 'text-red-600' };
-            }
-
-            return (
-              <>
-                <div className="flex items-start gap-3">
-                  {/* Player Image */}
-                  <div className="flex-shrink-0 w-20 h-20 rounded-lg bg-gray-200 flex items-center justify-center">
-                    <User className="text-gray-400" size={32} />
-                  </div>
-
-                  {/* Player Info */}
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg text-gray-900">{hoveredPlayer.name}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className={`px-2 py-0.5 text-xs rounded ${positionColors[hoveredPlayer.position] || 'bg-gray-100'}`}>
-                        {hoveredPlayer.position}
-                      </span>
-                      <span className="text-sm text-gray-600">{hoveredPlayer.team || 'FA'}</span>
-                      {hoveredPlayer.age && <span className="text-sm text-gray-600">• Age {hoveredPlayer.age}</span>}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Rankings Section */}
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  <div className="bg-gray-50 p-2 rounded">
-                    <div className="text-xs text-gray-600">Consensus Rank</div>
-                    <div className="text-lg font-bold text-gray-900">{hoveredPlayer.consensus_rank || '-'}</div>
-                  </div>
-                  <div className="bg-green-50 p-2 rounded">
-                    <div className="text-xs text-gray-600">Auction Value</div>
-                    <div className="text-lg font-bold text-green-600">${hoveredPlayer.auction_value || 1}</div>
-                  </div>
-                </div>
-
-                {/* Source Rankings */}
-                <div className="mt-3 space-y-1">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Sleeper Rank:</span>
-                    <span className="font-medium">{hoveredPlayer.sleeper_rank || '-'}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">ESPN Rank:</span>
-                    <span className="font-medium">{hoveredPlayer.espn_rank || '-'}</span>
-                  </div>
-                </div>
-
-                {/* Dynasty Outlook */}
-                <div className="mt-3 pt-3 border-t border-gray-200">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Dynasty Outlook:</span>
-                    <span className={`text-sm font-medium ${dynastyOutlook.color}`}>
-                      {dynastyOutlook.status}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Injury Status */}
-                {hoveredPlayer.injury_status && (
-                  <div className="mt-3 p-2 bg-red-50 rounded flex items-center gap-2">
-                    <AlertCircle className="text-red-600" size={16} />
-                    <span className="text-sm text-red-800">{hoveredPlayer.injury_status}</span>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-        </div>
-      )}
     </div>
   );
 }

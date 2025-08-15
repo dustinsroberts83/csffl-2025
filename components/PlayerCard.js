@@ -1,184 +1,189 @@
 // components/PlayerCard.js
-import { useState, useEffect } from 'react';
-import { User, TrendingUp, Activity, AlertCircle, Calendar } from 'lucide-react';
+import { X, Calendar, Trophy, TrendingUp, Activity, DollarSign } from 'lucide-react';
 
-export default function PlayerCard({ player, sleeperPlayers, show, position }) {
-  const [sleeperData, setSleeperData] = useState(null);
-  const [imageError, setImageError] = useState(false);
+const positionColors = {
+  QB: 'bg-red-100 text-red-800',
+  RB: 'bg-green-100 text-green-800',
+  WR: 'bg-blue-100 text-blue-800',
+  TE: 'bg-orange-100 text-orange-800',
+  DT: 'bg-indigo-100 text-indigo-800',
+  DE: 'bg-indigo-100 text-indigo-800',
+  LB: 'bg-yellow-100 text-yellow-800',
+  CB: 'bg-teal-100 text-teal-800',
+  S: 'bg-pink-100 text-pink-800'
+};
 
-  useEffect(() => {
-    if (player && sleeperPlayers && show) {
-      // Find matching Sleeper player for additional data
-      const convertedName = player.name.includes(',') 
-        ? player.name.split(',').map(p => p.trim()).reverse().join(' ')
-        : player.name;
-      
-      const match = Object.values(sleeperPlayers).find(sp => {
-        if (!sp || !sp.first_name || !sp.last_name) return false;
-        const sleeperName = `${sp.first_name} ${sp.last_name}`.toLowerCase();
-        return sleeperName === convertedName.toLowerCase();
-      });
-      
-      setSleeperData(match);
-    }
-  }, [player, sleeperPlayers, show]);
+export default function PlayerCard({ player, onClose, mflRank }) {
+  if (!player) return null;
 
-  if (!show || !player) return null;
-
-  // Position colors
-  const positionColors = {
-    QB: 'bg-red-100 text-red-800 border-red-300',
-    RB: 'bg-green-100 text-green-800 border-green-300',
-    WR: 'bg-blue-100 text-blue-800 border-blue-300',
-    TE: 'bg-orange-100 text-orange-800 border-orange-300',
-    PK: 'bg-purple-100 text-purple-800 border-purple-300',
-    DEF: 'bg-gray-100 text-gray-800 border-gray-300',
-    DT: 'bg-indigo-100 text-indigo-800 border-indigo-300',
-    DE: 'bg-indigo-100 text-indigo-800 border-indigo-300',
-    LB: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-    CB: 'bg-teal-100 text-teal-800 border-teal-300',
-    S: 'bg-pink-100 text-pink-800 border-pink-300'
-  };
-
-  const getPositionColor = (pos) => positionColors[pos] || 'bg-gray-100 text-gray-800 border-gray-300';
-
-  // Calculate dynasty outlook based on age and position
-  const getDynastyOutlook = () => {
-    const age = player.age || sleeperData?.age || 25;
-    const position = player.position;
-    
-    const primes = {
-      QB: { start: 26, peak: 29, end: 32 },
-      RB: { start: 22, peak: 24, end: 27 },
-      WR: { start: 24, peak: 26, end: 29 },
-      TE: { start: 25, peak: 27, end: 30 }
-    };
-    
-    const prime = primes[position];
-    if (!prime) return { status: 'Unknown', color: 'text-gray-600' };
-    
-    if (age < prime.start) return { status: 'Pre-Prime', color: 'text-green-600' };
-    if (age >= prime.start && age <= prime.end) return { status: 'Prime Years', color: 'text-blue-600' };
-    return { status: 'Post-Prime', color: 'text-red-600' };
-  };
-
-  const dynastyOutlook = getDynastyOutlook();
+  // Construct image URL based on player ID
+  const imageUrl = `https://www.myfantasyleague.com/${new Date().getFullYear()}/player_photo.jpg?PLAYER_ID=${player.mfl_id}`;
+  
+  // Calculate years in league if draft year exists
+  const yearsInLeague = player.draft_year ? 
+    new Date().getFullYear() - parseInt(player.draft_year) : null;
 
   return (
-    <div 
-      className="absolute z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-4 w-80"
-      style={{
-        top: position.top,
-        left: position.left,
-        transform: 'translateY(-100%) translateY(-10px)'
-      }}
-    >
-      <div className="flex items-start gap-3">
-        {/* Player Image */}
-        <div className="flex-shrink-0">
-          {sleeperData?.player_id && !imageError ? (
-            <img
-              src={`https://sleepercdn.com/content/nfl/players/${sleeperData.player_id}.jpg`}
-              alt={player.name}
-              className="w-20 h-20 rounded-lg object-cover"
-              onError={() => setImageError(true)}
-            />
-          ) : (
-            <div className="w-20 h-20 rounded-lg bg-gray-200 flex items-center justify-center">
-              <User className="text-gray-400" size={32} />
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="relative bg-gradient-to-r from-gray-800 to-gray-900 text-white p-6 rounded-t-lg">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 text-gray-300 hover:text-white"
+          >
+            <X size={24} />
+          </button>
+          
+          <div className="flex items-start gap-4">
+            {/* Player Image */}
+            <div className="flex-shrink-0">
+              <img
+                src={imageUrl}
+                alt={player.name}
+                className="w-24 h-24 rounded-lg object-cover bg-gray-700"
+                onError={(e) => {
+                  e.target.src = 'https://via.placeholder.com/96x96?text=No+Photo';
+                }}
+              />
             </div>
-          )}
+            
+            {/* Player Info */}
+            <div className="flex-1">
+              <h2 className="text-2xl font-bold">{player.name}</h2>
+              <div className="flex items-center gap-3 mt-2">
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${positionColors[player.position] || 'bg-gray-200 text-gray-800'}`}>
+                  {player.position}
+                </span>
+                <span className="text-gray-300">{player.team || 'Free Agent'}</span>
+                {player.age && <span className="text-gray-300">Age {player.age}</span>}
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Player Info */}
-        <div className="flex-1">
-          <h3 className="font-bold text-lg text-gray-900">{player.name}</h3>
-          <div className="flex items-center gap-2 mt-1">
-            <span className={`px-2 py-0.5 text-xs rounded ${getPositionColor(player.position)}`}>
-              {player.position}
-            </span>
-            <span className="text-sm text-gray-600">{player.team || 'FA'}</span>
-            {player.age && <span className="text-sm text-gray-600">• Age {player.age}</span>}
+        {/* Body */}
+        <div className="p-6 space-y-4">
+          {/* Rankings */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-purple-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-purple-600 mb-1">
+                <TrendingUp size={18} />
+                <span className="text-sm font-medium">FantasyPros ECR</span>
+              </div>
+              <div className="text-2xl font-bold text-purple-800">
+                {player.fantasypros_rank ? `#${player.fantasypros_rank}` : 'N/A'}
+              </div>
+              {player.fantasypros_tier && (
+                <div className="text-sm text-purple-600 mt-1">Tier {player.fantasypros_tier}</div>
+              )}
+            </div>
+            
+            <div className="bg-blue-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-blue-600 mb-1">
+                <Trophy size={18} />
+                <span className="text-sm font-medium">MFL Expert Rank</span>
+              </div>
+              <div className="text-2xl font-bold text-blue-800">
+                {mflRank ? `#${mflRank}` : 'N/A'}
+              </div>
+            </div>
+          </div>
+
+          {/* Draft Info */}
+          {player.draft_year && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-gray-600 mb-2">
+                <Calendar size={18} />
+                <span className="text-sm font-medium">Draft Information</span>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-500">Draft Year:</span>
+                  <span className="ml-2 font-medium">{player.draft_year}</span>
+                </div>
+                {player.draft_round && (
+                  <div>
+                    <span className="text-gray-500">Round:</span>
+                    <span className="ml-2 font-medium">{player.draft_round}.{player.draft_pick || '??'}</span>
+                  </div>
+                )}
+                {yearsInLeague !== null && (
+                  <div>
+                    <span className="text-gray-500">Years in League:</span>
+                    <span className="ml-2 font-medium">{yearsInLeague}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Injury Status */}
+          {player.injury_status && (
+            <div className="bg-red-50 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-red-600 mb-1">
+                <Activity size={18} />
+                <span className="text-sm font-medium">Injury Status</span>
+              </div>
+              <div className="text-red-800">{player.injury_status}</div>
+            </div>
+          )}
+
+          {/* Additional Info */}
+          <div className="bg-gray-50 rounded-lg p-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              {player.bye_week && (
+                <div>
+                  <span className="text-gray-500">Bye Week:</span>
+                  <span className="ml-2 font-medium">{player.bye_week}</span>
+                </div>
+              )}
+              <div>
+                <span className="text-gray-500">Status:</span>
+                <span className="ml-2 font-medium text-green-600">Available</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Dynasty Value Indicators */}
+          <div className="border-t pt-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Dynasty Considerations</h3>
+            <div className="space-y-2 text-sm">
+              {player.age && player.position && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Age Value:</span>
+                  <span className={`font-medium ${
+                    (player.position === 'RB' && player.age <= 26) ||
+                    (player.position === 'WR' && player.age <= 28) ||
+                    (player.position === 'QB' && player.age <= 32) ||
+                    (player.position === 'TE' && player.age <= 30)
+                      ? 'text-green-600' : 'text-orange-600'
+                  }`}>
+                    {(player.position === 'RB' && player.age <= 26) ||
+                     (player.position === 'WR' && player.age <= 28) ||
+                     (player.position === 'QB' && player.age <= 32) ||
+                     (player.position === 'TE' && player.age <= 30)
+                      ? 'Prime Years' : 'Declining Value'}
+                  </span>
+                </div>
+              )}
+              {player.draft_round && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Draft Capital:</span>
+                  <span className={`font-medium ${
+                    parseInt(player.draft_round) <= 2 ? 'text-green-600' :
+                    parseInt(player.draft_round) <= 4 ? 'text-yellow-600' :
+                    'text-red-600'
+                  }`}>
+                    {parseInt(player.draft_round) <= 2 ? 'High' :
+                     parseInt(player.draft_round) <= 4 ? 'Medium' : 'Low'}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-
-      {/* Rankings Section */}
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <div className="bg-gray-50 p-2 rounded">
-          <div className="text-xs text-gray-600">Consensus Rank</div>
-          <div className="text-lg font-bold text-gray-900">{player.consensus_rank || '-'}</div>
-        </div>
-        <div className="bg-green-50 p-2 rounded">
-          <div className="text-xs text-gray-600">Auction Value</div>
-          <div className="text-lg font-bold text-green-600">${player.auction_value || 1}</div>
-        </div>
-      </div>
-
-      {/* Source Rankings */}
-      <div className="mt-3 space-y-1">
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Sleeper Rank:</span>
-          <span className="font-medium">{player.sleeper_rank || '-'}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">ESPN Rank:</span>
-          <span className="font-medium">{player.espn_rank || '-'}</span>
-        </div>
-        {player.dynasty_rank && (
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Dynasty Rank:</span>
-            <span className="font-medium">{player.dynasty_rank}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Dynasty Outlook */}
-      <div className="mt-3 pt-3 border-t border-gray-200">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Dynasty Outlook:</span>
-          <span className={`text-sm font-medium ${dynastyOutlook.color}`}>
-            {dynastyOutlook.status}
-          </span>
-        </div>
-      </div>
-
-      {/* Additional Info */}
-      {(player.injury_status || sleeperData?.injury_status) && (
-        <div className="mt-3 p-2 bg-red-50 rounded flex items-center gap-2">
-          <AlertCircle className="text-red-600" size={16} />
-          <span className="text-sm text-red-800">
-            {player.injury_status || sleeperData.injury_status}
-          </span>
-        </div>
-      )}
-
-      {/* Draft Info */}
-      {player.draft_year && (
-        <div className="mt-3 text-xs text-gray-500">
-          {player.draft_year} Draft
-          {player.draft_round && ` - Round ${player.draft_round}.${player.draft_pick}`}
-        </div>
-      )}
-
-      {/* Sleeper Metadata */}
-      {sleeperData && (
-        <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
-          {sleeperData.years_exp !== undefined && (
-            <div className="text-xs text-gray-600">
-              Experience: {sleeperData.years_exp} {sleeperData.years_exp === 1 ? 'year' : 'years'}
-            </div>
-          )}
-          {sleeperData.college && (
-            <div className="text-xs text-gray-600">College: {sleeperData.college}</div>
-          )}
-          {sleeperData.height && sleeperData.weight && (
-            <div className="text-xs text-gray-600">
-              {Math.floor(sleeperData.height / 12)}'{sleeperData.height % 12}" • {sleeperData.weight} lbs
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

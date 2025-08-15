@@ -2,17 +2,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, Trophy, DollarSign, AlertCircle, RefreshCw, Activity, Calculator, BarChart, Database, Gavel, TrendingUp } from 'lucide-react';
+import { Users, Trophy, DollarSign, AlertCircle, RefreshCw, Activity, Calculator, BarChart, Database, Gavel, TrendingUp, Search } from 'lucide-react';
 import LeagueInfo from './LeagueInfo';
 import Rosters from './Rosters';
 import Standings from './Standings';
 import DatabaseFreeAgents from './DatabaseFreeAgents';
 import TradeCalculator from './TradeCalculator';
 import AuctionDraft from './AuctionDraft';
-import DebugData from './DebugData';
-import RosterDiagnostic from './RosterDiagnostic';
 import MFLRankingsUploader from './MFLRankingsUploader';
-import { clearAllCaches, getCacheStatus } from './enhancedDataFetcher';
+import DiagnosticTool from './DiagnosticTool';  // ADD THIS IMPORT
 
 export default function MFLViewer() {
   const [leagueId, setLeagueId] = useState('');
@@ -31,10 +29,10 @@ export default function MFLViewer() {
     players: null,
     playerDetails: {},
     freeAgents: null,
-    playerScores: null,
-    sleeperPlayers: null,
-    enhancedFreeAgents: null
+    playerScores: null
   });
+
+  // ... (all the existing functions remain the same) ...
 
   // Fetch data through API proxy
   const fetchMFLData = async (type, additionalParams = {}) => {
@@ -147,17 +145,7 @@ export default function MFLViewer() {
         fetchMFLData('players')
       ]);
 
-      setEnhancementStatus('Fetching external data sources...');
-
-      // Fetch Sleeper player data
-      let sleeperPlayers = null;
-      try {
-        const sleeperResponse = await fetch('https://api.sleeper.app/v1/players/nfl');
-        sleeperPlayers = await sleeperResponse.json();
-        console.log('Fetched Sleeper player data');
-      } catch (error) {
-        console.error('Could not fetch Sleeper data:', error);
-      }
+      setEnhancementStatus('Processing league data...');
 
       // Try to fetch player scores/projections
       let playerScores = null;
@@ -238,15 +226,15 @@ export default function MFLViewer() {
         });
       }
 
-      // Filter free agents - IMPORTANT: We need full player details here
+      // Filter free agents
       const freeAgents = playersData.players?.player?.filter(
         player => !rosteredPlayerIds.has(player.id)
-      ).slice(0, 100).map(player => ({  // Still limiting to 100 for performance
+      ).slice(0, 100).map(player => ({
         ...player,
         adp: adpData?.[player.id] || null
       })) || [];
 
-      console.log('Free agents sample:', freeAgents[0]); // Debug log
+      console.log('Free agents sample:', freeAgents[0]);
 
       // Get franchise names
       const franchiseNames = {};
@@ -270,21 +258,19 @@ export default function MFLViewer() {
         });
       }
 
-      setEnhancementStatus('Processing free agents...');
+      setEnhancementStatus('');
 
-      // Set data - pass the free agents with full player details
+      // Set data
       setData({
         league: leagueData.league,
         rosters: rostersWithNames,
         standings: standingsData.leagueStandings?.franchise || [],
         players: playersData.players?.player || [],
         playerDetails: playerDetails,
-        freeAgents: freeAgents, // This now has full player details including position
-        playerScores: playerScores || {},
-        sleeperPlayers: sleeperPlayers || {}
+        freeAgents: freeAgents,
+        playerScores: playerScores || {}
       });
 
-      setEnhancementStatus('');
       setLoading(false);
     } catch (err) {
       if (err.message.includes('Authentication required')) {
@@ -302,64 +288,50 @@ export default function MFLViewer() {
     }
   };
 
-  // Sync data to database
-  const syncToDatabase = async () => {
-    if (!data.players || data.players.length === 0) {
-      alert('Please fetch league data first before syncing to database');
+  // Complete sync function - MFL + FantasyPros only
+  const syncMFLAndFantasyPros = async () => {
+    if (!leagueId) {
+      alert('Please enter a league ID first');
       return;
     }
 
     try {
-      setEnhancementStatus('Syncing to database...');
+      setEnhancementStatus('Syncing MFL free agents and FantasyPros rankings...');
       
-      const response = await fetch('/api/sync-database', {
+      const response = await fetch('/api/sync-mfl-fantasypros', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leagueId,
-          players: data.players,
-          rosters: data.rosters,
-          sleeperPlayers: data.sleeperPlayers,
-          playerDetails: data.playerDetails
+          year
         })
       });
       
       const result = await response.json();
       
       if (result.success) {
-        alert(`Database sync successful!\nUpdated: ${result.playersUpdated} players\nFree Agents: ${result.freeAgents}\nRostered: ${result.rosteredPlayers}`);
+        alert(`Sync Complete!\n
+Free Agents: ${result.summary.freeAgents}
+FantasyPros Rankings Fetched: ${result.summary.fantasyProsRankingsFetched}
+Players Matched: ${result.summary.playersMatched}
+Rankings Updated: ${result.summary.rankingsUpdated}`);
         
-        // Optionally update rankings after sync
-        const updateRankings = confirm('Would you like to update player rankings from external sources?');
-        if (updateRankings) {
-          const rankResponse = await fetch('/api/update-rankings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ leagueId })
-          });
-          const rankResult = await rankResponse.json();
-          if (rankResult.success) {
-            alert(`Rankings updated successfully!\n${JSON.stringify(rankResult.summary, null, 2)}`);
-          }
+        // Refresh the current tab if on free agents
+        if (activeTab === 'freeAgents') {
+          setActiveTab('league');
+          setTimeout(() => setActiveTab('freeAgents'), 100);
         }
       } else {
-        alert(`Database sync failed: ${result.error}`);
+        throw new Error(result.error || 'Sync failed');
       }
       
       setEnhancementStatus('');
     } catch (error) {
-      console.error('Database sync error:', error);
-      alert('Failed to sync to database');
+      console.error('Sync error:', error);
+      alert(`Failed to sync: ${error.message}`);
       setEnhancementStatus('');
     }
   };
-
-  // Clear cache on unmount
-  useEffect(() => {
-    return () => {
-      clearAllCaches();
-    };
-  }, []);
 
   return (
     <div className="max-w-7xl mx-auto p-4">
@@ -374,10 +346,10 @@ export default function MFLViewer() {
             <Activity className="mr-2 mt-1 flex-shrink-0 text-green-600" size={20} />
             <div>
               <p className="font-semibold text-gray-800">Enhanced Features Active!</p>
-              <p className="text-sm text-gray-700">• Database-powered player rankings</p>
-              <p className="text-sm text-gray-700">• Real ECR (Expert Consensus Rankings)</p>
-              <p className="text-sm text-gray-700">• Fast loading with no calculations</p>
-              <p className="text-sm text-gray-700">• Trade calculator with dynasty considerations</p>
+              <p className="text-sm text-gray-700">• FantasyPros Expert Consensus Rankings</p>
+              <p className="text-sm text-gray-700">• MFL expert rankings support</p>
+              <p className="text-sm text-gray-700">• Database-powered free agent tracking</p>
+              <p className="text-sm text-gray-700">• Auction draft with live tracking</p>
             </div>
           </div>
         </div>
@@ -446,25 +418,13 @@ export default function MFLViewer() {
             )}
           </button>
           <button
-            onClick={() => {
-              clearAllCaches();
-              alert('Cache cleared! Next fetch will get fresh data.');
-            }}
-            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
-            title="Clear cached data"
+            onClick={syncMFLAndFantasyPros}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+            title="Complete MFL and FantasyPros sync"
           >
-            Clear Cache
+            <RefreshCw size={16} />
+            Full Sync
           </button>
-          {data.players && data.players.length > 0 && (
-            <button
-              onClick={syncToDatabase}
-              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
-              title="Sync to database"
-            >
-              <Database size={16} />
-              Sync to DB
-            </button>
-          )}
         </div>
 
         {enhancementStatus && (
@@ -509,13 +469,6 @@ export default function MFLViewer() {
             Free Agents
           </button>
           <button
-            className={`px-4 py-2 font-semibold flex items-center gap-1 ${activeTab === 'trade' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
-            onClick={() => setActiveTab('trade')}
-          >
-            <Calculator size={16} />
-            Trade Calculator
-          </button>
-          <button
             className={`px-4 py-2 font-semibold flex items-center gap-1 ${activeTab === 'auction' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
             onClick={() => setActiveTab('auction')}
           >
@@ -530,16 +483,11 @@ export default function MFLViewer() {
             Upload Rankings
           </button>
           <button
-            className={`px-4 py-2 font-semibold ${activeTab === 'diagnostic' ? 'border-b-2 border-orange-600 text-orange-600' : 'text-gray-600 hover:text-gray-800'}`}
+            className={`px-4 py-2 font-semibold flex items-center gap-1 ${activeTab === 'diagnostic' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
             onClick={() => setActiveTab('diagnostic')}
           >
+            <Search size={16} />
             Diagnostic
-          </button>
-          <button
-            className={`px-4 py-2 font-semibold ${activeTab === 'debug' ? 'border-b-2 border-red-600 text-red-600' : 'text-gray-600 hover:text-gray-800'}`}
-            onClick={() => setActiveTab('debug')}
-          >
-            Debug
           </button>
         </div>
       </div>
@@ -555,7 +503,7 @@ export default function MFLViewer() {
         {loading && (
           <div className="flex items-center justify-center py-8">
             <RefreshCw className="animate-spin mr-2" size={24} />
-            <span className="text-gray-600">Loading enhanced league data...</span>
+            <span className="text-gray-600">Loading league data...</span>
           </div>
         )}
         {!loading && data.league && (
@@ -567,14 +515,6 @@ export default function MFLViewer() {
               <DatabaseFreeAgents 
                 leagueId={leagueId}
                 year={year} 
-              />
-            )}
-            {activeTab === 'trade' && (
-              <TradeCalculator
-                rosters={data.rosters}
-                playerDetails={data.playerDetails}
-                freeAgents={data.freeAgents}
-                year={year}
               />
             )}
             {activeTab === 'auction' && (
@@ -590,35 +530,33 @@ export default function MFLViewer() {
               />
             )}
             {activeTab === 'diagnostic' && (
-              <RosterDiagnostic
-                rosters={data.rosters}
-                playerDetails={data.playerDetails}
+              <DiagnosticTool
+                leagueId={leagueId}
               />
             )}
-            {activeTab === 'debug' && <DebugData rosters={data.rosters} players={data.players} />}
           </>
         )}
       </div>
 
       <div className="mt-8 bg-gray-50 rounded-lg p-4 border border-gray-200">
-        <h3 className="font-semibold mb-2 text-gray-800">Enhanced Features:</h3>
+        <h3 className="font-semibold mb-2 text-gray-800">Features:</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
           <div>
-            <h4 className="font-medium text-gray-800">🎯 Auction Values</h4>
+            <h4 className="font-medium text-gray-800">🎯 Full Sync</h4>
             <ul className="ml-4 space-y-1">
-              <li>• Enhanced VBD calculations with positional scarcity</li>
-              <li>• Dynasty age curves (RBs peak 23-26, WRs 25-29)</li>
-              <li>• Draft capital and team situation adjustments</li>
-              <li>• Consensus rankings from multiple sources</li>
+              <li>• Fetches all players from MFL</li>
+              <li>• Identifies and stores free agents</li>
+              <li>• Gets FantasyPros ECR for all positions</li>
+              <li>• Automatically matches and updates rankings</li>
             </ul>
           </div>
           <div>
-            <h4 className="font-medium text-gray-800">📊 Trade Calculator</h4>
+            <h4 className="font-medium text-gray-800">📊 Auction Draft</h4>
             <ul className="ml-4 space-y-1">
-              <li>• Dynasty-adjusted player values</li>
-              <li>• Draft pick valuations by year</li>
-              <li>• Team needs analysis</li>
-              <li>• Fair trade recommendations</li>
+              <li>• Live salary cap tracking</li>
+              <li>• Maximum bid enforcement</li>
+              <li>• Draft history with undo</li>
+              <li>• Export draft results</li>
             </ul>
           </div>
         </div>

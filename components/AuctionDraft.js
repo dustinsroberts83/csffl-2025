@@ -1,7 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
-import { DollarSign, Search, User, AlertCircle, RotateCcw, Save, X } from 'lucide-react';
+// components/AuctionDraft.js
+import { useState, useEffect } from 'react';
+import { DollarSign, Search, User, AlertCircle, RotateCcw, Save, X, TrendingUp, RefreshCw, ArrowUpDown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { getOwnerName } from './teamOwners';
+import PlayerHoverCard from './PlayerHoverCard';
+import PlayerImage from './PlayerImage';
 
 // Position colors
 const positionColors = {
@@ -22,162 +25,11 @@ const SALARY_CAP = 500;
 const MIN_BID = 1;
 const ROSTER_SIZE = 26;
 
-// Player Hover Card Component
-function PlayerHoverCard({ player, sleeperPlayers, position }) {
-  const [imageError, setImageError] = useState(false);
-  
-  // Find matching Sleeper player for additional data and image
-  const convertedName = player.name.includes(',') 
-    ? player.name.split(',').map(p => p.trim()).reverse().join(' ')
-    : player.name;
-  
-  const sleeperData = sleeperPlayers ? Object.values(sleeperPlayers).find(sp => {
-    if (!sp || !sp.first_name || !sp.last_name) return false;
-    const sleeperName = `${sp.first_name} ${sp.last_name}`.toLowerCase();
-    return sleeperName === convertedName.toLowerCase();
-  }) : null;
-
-  // Calculate dynasty outlook
-  const age = player.age || sleeperData?.age || 25;
-  const playerPosition = player.position;
-  const primes = {
-    QB: { start: 26, peak: 29, end: 32 },
-    RB: { start: 22, peak: 24, end: 27 },
-    WR: { start: 24, peak: 26, end: 29 },
-    TE: { start: 25, peak: 27, end: 30 }
-  };
-  
-  const prime = primes[playerPosition];
-  let dynastyOutlook = { status: 'Unknown', color: 'text-gray-600' };
-  
-  if (prime) {
-    if (age < prime.start) dynastyOutlook = { status: 'Pre-Prime', color: 'text-green-600' };
-    else if (age >= prime.start && age <= prime.end) dynastyOutlook = { status: 'Prime Years', color: 'text-blue-600' };
-    else dynastyOutlook = { status: 'Post-Prime', color: 'text-red-600' };
-  }
-
-  return (
-    <div 
-      className="fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 p-4 w-80 pointer-events-none"
-      style={{
-        top: `${position.top}px`,
-        left: `${position.left}px`
-      }}
-    >
-      <div className="flex items-start gap-3">
-        {/* Player Image */}
-        <div className="flex-shrink-0">
-          {sleeperData?.player_id && !imageError ? (
-            <img
-              src={`https://sleepercdn.com/content/nfl/players/${sleeperData.player_id}.jpg`}
-              alt={player.name}
-              className="w-20 h-20 rounded-lg object-cover bg-gray-100"
-              onError={() => setImageError(true)}
-            />
-          ) : (
-            <div className="w-20 h-20 rounded-lg bg-gray-200 flex items-center justify-center">
-              <User className="text-gray-400" size={32} />
-            </div>
-          )}
-        </div>
-
-        {/* Player Info */}
-        <div className="flex-1">
-          <h3 className="font-bold text-lg text-gray-900">{player.name}</h3>
-          <div className="flex items-center gap-2 mt-1">
-            <span className={`px-2 py-0.5 text-xs rounded ${positionColors[player.position] || 'bg-gray-100'}`}>
-              {player.position}
-            </span>
-            <span className="text-sm text-gray-600">{player.team || 'FA'}</span>
-            {player.age && <span className="text-sm text-gray-600">• Age {player.age}</span>}
-          </div>
-        </div>
-      </div>
-
-      {/* Rankings Section */}
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <div className="bg-gray-50 p-2 rounded">
-          <div className="text-xs text-gray-600">Consensus Rank</div>
-          <div className="text-lg font-bold text-gray-900">{player.consensus_rank || '-'}</div>
-        </div>
-        <div className="bg-green-50 p-2 rounded">
-          <div className="text-xs text-gray-600">Auction Value</div>
-          <div className="text-lg font-bold text-green-600">${player.auction_value || 1}</div>
-        </div>
-      </div>
-
-      {/* Source Rankings */}
-      <div className="mt-3 space-y-1">
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Sleeper Rank:</span>
-          <span className="font-medium">{player.sleeper_rank || '-'}</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">ESPN Rank:</span>
-          <span className="font-medium">{player.espn_rank || '-'}</span>
-        </div>
-        {player.dynasty_rank && (
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Dynasty Rank:</span>
-            <span className="font-medium">{player.dynasty_rank}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Dynasty Outlook */}
-      <div className="mt-3 pt-3 border-t border-gray-200">
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-600">Dynasty Outlook:</span>
-          <span className={`text-sm font-medium ${dynastyOutlook.color}`}>
-            {dynastyOutlook.status}
-          </span>
-        </div>
-      </div>
-
-      {/* Additional Info */}
-      {(player.injury_status || sleeperData?.injury_status) && (
-        <div className="mt-3 p-2 bg-red-50 rounded flex items-center gap-2">
-          <AlertCircle className="text-red-600" size={16} />
-          <span className="text-sm text-red-800">
-            {player.injury_status || sleeperData.injury_status}
-          </span>
-        </div>
-      )}
-
-      {/* Draft Info */}
-      {player.draft_year && (
-        <div className="mt-3 text-xs text-gray-500">
-          {player.draft_year} Draft
-          {player.draft_round && ` - Round ${player.draft_round}.${player.draft_pick}`}
-        </div>
-      )}
-
-      {/* Sleeper Metadata */}
-      {sleeperData && (
-        <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
-          {sleeperData.years_exp !== undefined && (
-            <div className="text-xs text-gray-600">
-              Experience: {sleeperData.years_exp} {sleeperData.years_exp === 1 ? 'year' : 'years'}
-            </div>
-          )}
-          {sleeperData.college && (
-            <div className="text-xs text-gray-600">College: {sleeperData.college}</div>
-          )}
-          {sleeperData.height && sleeperData.weight && (
-            <div className="text-xs text-gray-600">
-              {Math.floor(sleeperData.height / 12)}'{sleeperData.height % 12}" • {sleeperData.weight} lbs
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
   // State for database free agents
   const [databaseFreeAgents, setDatabaseFreeAgents] = useState([]);
   const [loadingPlayers, setLoadingPlayers] = useState(true);
+  
   // Initialize draft state from localStorage or create new
   const [draftState, setDraftState] = useState(() => {
     const saved = localStorage.getItem('auctionDraftState');
@@ -236,11 +88,10 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
   const [bidAmount, setBidAmount] = useState('');
   const [selectedTeam, setSelectedTeam] = useState('');
   const [showUndoConfirm, setShowUndoConfirm] = useState(null);
-  const [hoveredPlayer, setHoveredPlayer] = useState(null);
-  const [cardPosition, setCardPosition] = useState({ top: 0, left: 0 });
-  const [sleeperPlayers, setSleeperPlayers] = useState(null);
-  const [useMFLRankings, setUseMFLRankings] = useState(false);
+  const [rankingSource, setRankingSource] = useState('fantasypros');
   const [mflRankings, setMflRankings] = useState({});
+  const [sortBy, setSortBy] = useState('fantasypros_rank');
+  const [sortOrder, setSortOrder] = useState('asc');
 
   // Save to localStorage whenever draft state changes
   useEffect(() => {
@@ -249,62 +100,49 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
 
   // Fetch free agents from database
   useEffect(() => {
-    const fetchDatabaseFreeAgents = async () => {
-      try {
-        setLoadingPlayers(true);
-        
-        // Fetch ALL free agents using pagination to bypass 1000 row limit
-        const pageSize = 1000;
-        let allData = [];
-        let page = 0;
-        let hasMore = true;
-
-        while (hasMore) {
-          const { data, error } = await supabase
-            .from('players')
-            .select('*')
-            .eq('is_free_agent', true)
-            .order('auction_value', { ascending: false, nullsFirst: false })
-            .range(page * pageSize, (page + 1) * pageSize - 1);
-          
-          if (error) throw error;
-          
-          if (data && data.length > 0) {
-            allData = [...allData, ...data];
-            hasMore = data.length === pageSize;
-            page++;
-          } else {
-            hasMore = false;
-          }
-        }
-        
-        console.log(`Fetched ${allData.length} free agents from database`);
-        setDatabaseFreeAgents(allData);
-      } catch (error) {
-        console.error('Error fetching free agents:', error);
-        // Fallback to prop if database fails
-        setDatabaseFreeAgents(freeAgents || []);
-      } finally {
-        setLoadingPlayers(false);
-      }
-    };
-    
-    const fetchSleeperPlayers = async () => {
-      try {
-        const response = await fetch('https://api.sleeper.app/v1/players/nfl');
-        if (response.ok) {
-          const data = await response.json();
-          setSleeperPlayers(data);
-        }
-      } catch (error) {
-        console.error('Error fetching Sleeper players:', error);
-      }
-    };
-    
     fetchDatabaseFreeAgents();
-    fetchSleeperPlayers();
     fetchMFLRankings();
   }, [freeAgents]);
+
+  const fetchDatabaseFreeAgents = async () => {
+    try {
+      setLoadingPlayers(true);
+      
+      // Fetch ALL free agents using pagination to bypass 1000 row limit
+      const pageSize = 1000;
+      let allData = [];
+      let page = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('players')
+          .select('*')
+          .eq('is_free_agent', true)
+          .order('fantasypros_rank', { ascending: true, nullsFirst: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          hasMore = data.length === pageSize;
+          page++;
+        } else {
+          hasMore = false;
+        }
+      }
+      
+      console.log(`Fetched ${allData.length} free agents from database`);
+      setDatabaseFreeAgents(allData);
+    } catch (error) {
+      console.error('Error fetching free agents:', error);
+      // Fallback to prop if database fails
+      setDatabaseFreeAgents(freeAgents || []);
+    } finally {
+      setLoadingPlayers(false);
+    }
+  };
 
   // Fetch MFL Rankings from database
   const fetchMFLRankings = async () => {
@@ -333,72 +171,56 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
   // Get all drafted player IDs
   const draftedPlayerIds = new Set(draftState.draftPicks.map(pick => pick.playerId));
 
-  // Create a map of Sleeper players for efficient lookup
-  const sleeperPlayerMap = useMemo(() => {
-    if (!sleeperPlayers) return new Map();
-    
-    const map = new Map();
-    Object.values(sleeperPlayers).forEach(sp => {
-      if (sp && sp.first_name && sp.last_name) {
-        const fullName = `${sp.first_name} ${sp.last_name}`.toLowerCase();
-        map.set(fullName, sp);
-      }
-    });
-    return map;
-  }, [sleeperPlayers]);
-
   // Filter available players
-  const availablePlayers = useMemo(() => {
-    if (!databaseFreeAgents || databaseFreeAgents.length === 0) return [];
-    
-    return databaseFreeAgents
-      .filter(player => !draftedPlayerIds.has(player.mfl_id))
-      .filter(player => {
-        if (positionFilter !== 'ALL' && player.position !== positionFilter) return false;
-        if (searchTerm && !player.name.toLowerCase().includes(searchTerm.toLowerCase())) {
-          return false;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        // Sort by auction value, then by name
-        const valueA = a.auction_value || 1;
-        const valueB = b.auction_value || 1;
-        if (valueB !== valueA) return valueB - valueA;
-        return a.name.localeCompare(b.name);
-      });
-  }, [databaseFreeAgents, draftedPlayerIds, positionFilter, searchTerm]);
-
-  // Group players by position
-  const playersByPosition = useMemo(() => {
-    const grouped = {};
-    availablePlayers.forEach(player => {
-      if (!grouped[player.position]) {
-        grouped[player.position] = [];
+  const availablePlayers = databaseFreeAgents
+    .filter(player => !draftedPlayerIds.has(player.mfl_id))
+    .filter(player => {
+      if (positionFilter !== 'ALL' && player.position !== positionFilter) return false;
+      if (searchTerm && !player.name.toLowerCase().includes(searchTerm.toLowerCase())) {
+        return false;
       }
-      grouped[player.position].push(player);
+      return true;
     });
+
+  // Sort players based on selected criteria
+  const sortedPlayers = [...availablePlayers].sort((a, b) => {
+    let aVal, bVal;
     
-    // Sort each position group by MFL rank if enabled
-    if (useMFLRankings) {
-      Object.keys(grouped).forEach(position => {
-        grouped[position].sort((a, b) => {
-          const rankA = mflRankings[a.name.toLowerCase()] || 9999;
-          const rankB = mflRankings[b.name.toLowerCase()] || 9999;
-          return rankA - rankB;
-        });
-      });
+    switch (sortBy) {
+      case 'name':
+        return sortOrder === 'asc' ? 
+          a.name.localeCompare(b.name) : 
+          b.name.localeCompare(a.name);
+      case 'fantasypros_rank':
+        aVal = a.fantasypros_rank || 9999;
+        bVal = b.fantasypros_rank || 9999;
+        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+      case 'mfl_rank':
+        aVal = mflRankings[a.name.toLowerCase()] || 9999;
+        bVal = mflRankings[b.name.toLowerCase()] || 9999;
+        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+      case 'age':
+        aVal = a.age || 0;
+        bVal = b.age || 0;
+        return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+      default:
+        return 0;
     }
-    
-    return grouped;
-  }, [availablePlayers, useMFLRankings, mflRankings]);
+  });
+
+  const toggleSort = (field) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
 
   // Get teams that can still bid
-  const activeTeams = useMemo(() => {
-    return Object.values(draftState.teams).filter(team => 
-      team.openSlots > 0 && team.remainingBudget >= MIN_BID
-    );
-  }, [draftState.teams]);
+  const activeTeams = Object.values(draftState.teams).filter(team => 
+    team.openSlots > 0 && team.remainingBudget >= MIN_BID
+  );
 
   // Calculate max bid for a team
   const getMaxBid = (team) => {
@@ -504,7 +326,7 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
       // Clear local storage
       localStorage.removeItem('auctionDraftState');
       
-      // Re-initialize the draft state without reloading the page
+      // Re-initialize the draft state
       const teams = {};
       rosters?.forEach(roster => {
         const teamName = roster.name || `Team ${roster.id}`;
@@ -567,38 +389,8 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
     URL.revokeObjectURL(url);
   };
 
-  // Handle mouse events for hover card
-  const handleMouseEnter = (player, event) => {
-    setHoveredPlayer(player);
-  };
-
-  const handleMouseMove = (event) => {
-    if (!hoveredPlayer) return;
-    
-    const cardWidth = 320;
-    const cardHeight = 450; // Slightly taller to accommodate image
-    const offset = 10;
-    
-    // Get mouse position relative to viewport
-    let left = event.clientX + offset;
-    let top = event.clientY + offset;
-    
-    // Keep card within viewport horizontally
-    if (left + cardWidth > window.innerWidth) {
-      left = event.clientX - cardWidth - offset;
-    }
-    
-    // Keep card within viewport vertically
-    if (top + cardHeight > window.innerHeight) {
-      top = window.innerHeight - cardHeight - offset;
-    }
-    
-    setCardPosition({ top, left });
-  };
-
-  const handleMouseLeave = () => {
-    setHoveredPlayer(null);
-  };
+  // Get unique positions
+  const positions = [...new Set(databaseFreeAgents.map(p => p.position).filter(Boolean))].sort();
 
   return (
     <div className="space-y-6">
@@ -628,213 +420,12 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
         </div>
       </div>
 
-      {/* Draft Status */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Team Status */}
-        <div className="lg:col-span-1">
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="font-semibold text-gray-800 mb-3">Team Status</h3>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {Object.values(draftState.teams).map(team => {
-                const maxBid = getMaxBid(team);
-                const isActive = team.openSlots > 0 && maxBid > 0;
-                
-                return (
-                  <div 
-                    key={team.id} 
-                    className={`p-2 rounded border ${
-                      isActive ? 'border-green-300 bg-green-50' : 'border-gray-300 bg-gray-50'
-                    }`}
-                  >
-                    <div className="font-medium text-sm text-gray-900">{team.name}</div>
-                    {getOwnerName(team.name) && (
-                      <div className="text-xs text-gray-600">{getOwnerName(team.name)}</div>
-                    )}
-                    <div className="text-xs text-gray-700 mt-1">
-                      Budget: ${team.remainingBudget} • Slots: {team.openSlots}
-                      {isActive && <span className="text-green-600 ml-1">• Max: ${maxBid}</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Player Selection */}
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="font-semibold text-gray-800 mb-3">Make a Pick</h3>
-            
-            {/* Search and Filters */}
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <input
-                  type="text"
-                  placeholder="Search players..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-500"
-                />
-                <select
-                  value={positionFilter}
-                  onChange={(e) => setPositionFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
-                >
-                  <option value="ALL">All Positions</option>
-                  {Object.keys(positionColors).map(pos => (
-                    <option key={pos} value={pos}>{pos}</option>
-                  ))}
-                </select>
-              </div>
-              
-              {/* MFL Rankings Toggle */}
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="useMFLRankings"
-                  checked={useMFLRankings}
-                  onChange={(e) => setUseMFLRankings(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-                />
-                <label htmlFor="useMFLRankings" className="text-sm text-gray-700 cursor-pointer">
-                  Sort by MFL Expert Rankings
-                </label>
-                {Object.keys(mflRankings).length > 0 && (
-                  <span className="text-xs text-gray-500">
-                    ({Object.keys(mflRankings).length} rankings loaded)
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Selected Player */}
-            {selectedPlayer && (
-              <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="font-semibold">{selectedPlayer.name}</div>
-                    <div className="text-sm text-gray-600">
-                      <span className={`px-2 py-0.5 text-xs rounded ${positionColors[selectedPlayer.position]}`}>
-                        {selectedPlayer.position}
-                      </span>
-                      <span className="ml-2">{selectedPlayer.team || 'FA'}</span>
-                      <span className="ml-2">Value: ${selectedPlayer.auction_value || 1}</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setSelectedPlayer(null)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-
-                {/* Bid Form */}
-                <div className="grid grid-cols-2 gap-3 mt-3">
-                  <select
-                    value={selectedTeam}
-                    onChange={(e) => setSelectedTeam(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
-                  >
-                    <option value="" className="text-gray-500">Select Team</option>
-                    {activeTeams.map(team => {
-                      const ownerName = getOwnerName(team.name);
-                      return (
-                        <option key={team.id} value={team.name}>
-                          {ownerName ? `${ownerName} - ` : ''}{team.name} (Max: ${getMaxBid(team)})
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      placeholder="Bid"
-                      value={bidAmount}
-                      onChange={(e) => setBidAmount(e.target.value)}
-                      min={MIN_BID}
-                      max={selectedTeam ? getMaxBid(draftState.teams[selectedTeam]) : 999}
-                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1 text-gray-900 placeholder-gray-500"
-                    />
-                    <button
-                      onClick={addDraftPick}
-                      disabled={!selectedTeam || !bidAmount}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                    >
-                      Draft
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Available Players */}
-            {loadingPlayers ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="text-gray-600">Loading free agents...</div>
-              </div>
-            ) : availablePlayers.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                {searchTerm || positionFilter !== 'ALL' 
-                  ? 'No players found matching your filters' 
-                  : 'No free agents available'}
-              </div>
-            ) : (
-              <div className="max-h-96 overflow-y-auto">
-                <div className="text-sm text-gray-600 mb-2">
-                  Showing {availablePlayers.length} of {databaseFreeAgents.length} total free agents
-                </div>
-                {Object.entries(playersByPosition).map(([position, players]) => (
-                  <div key={position} className="mb-4">
-                    <h4 className="font-medium text-gray-800 mb-2">{position}</h4>
-                    <div className="grid grid-cols-1 gap-1">
-                      {players.map(player => (
-                        <div
-                          key={player.mfl_id}
-                          onClick={() => setSelectedPlayer(player)}
-                          onMouseEnter={(e) => handleMouseEnter(player, e)}
-                          onMouseMove={handleMouseMove}
-                          onMouseLeave={handleMouseLeave}
-                          className={`p-2 rounded border cursor-pointer hover:bg-gray-50 ${
-                            selectedPlayer?.mfl_id === player.mfl_id ? 'border-blue-400 bg-blue-50' : 'border-gray-200'
-                          }`}
-                        >
-                          <div className="flex justify-between items-center">
-                            <div>
-                              <span className="font-medium text-sm text-gray-900">{player.name}</span>
-                              <span className="text-xs text-gray-600 ml-2">{player.team || 'FA'}</span>
-                              {player.age && <span className="text-xs text-gray-500 ml-1">Age {player.age}</span>}
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-medium text-green-600">${player.auction_value || 1}</div>
-                              {player.consensus_rank && (
-                                <div className="text-xs text-gray-500">Rank: {player.consensus_rank}</div>
-                              )}
-                              {useMFLRankings && mflRankings[player.name.toLowerCase()] && (
-                                <div className="text-xs text-blue-600">
-                                  MFL: #{mflRankings[player.name.toLowerCase()]}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Draft History */}
+      {/* Draft History - Moved to top */}
       <div className="bg-white rounded-lg shadow p-4">
         <h3 className="font-semibold text-gray-800 mb-3">Draft History</h3>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-64 overflow-y-auto">
           <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 sticky top-0">
               <tr>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Pick</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Player</th>
@@ -900,14 +491,254 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
         </div>
       </div>
 
-      {/* Player Card Hover */}
-      {hoveredPlayer && (
-        <PlayerHoverCard 
-          player={hoveredPlayer} 
-          sleeperPlayers={sleeperPlayers} 
-          position={cardPosition}
-        />
-      )}
+      {/* Draft Status */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Team Status */}
+        <div className="lg:col-span-1">
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="font-semibold text-gray-800 mb-3">Team Status</h3>
+            <div className="space-y-2 max-h-96 overflow-y-auto">
+              {Object.values(draftState.teams).map(team => {
+                const maxBid = getMaxBid(team);
+                const isActive = team.openSlots > 0 && maxBid > 0;
+                
+                return (
+                  <div 
+                    key={team.id} 
+                    className={`p-2 rounded border ${
+                      isActive ? 'border-green-300 bg-green-50' : 'border-gray-300 bg-gray-50'
+                    }`}
+                  >
+                    <div className="font-medium text-sm text-gray-900">{team.name}</div>
+                    {getOwnerName(team.name) && (
+                      <div className="text-xs text-gray-600">{getOwnerName(team.name)}</div>
+                    )}
+                    <div className="text-xs text-gray-700 mt-1">
+                      Budget: ${team.remainingBudget} • Slots: {team.openSlots}
+                      {isActive && <span className="text-green-600 ml-1">• Max: ${maxBid}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Player Selection */}
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-lg shadow p-4">
+            <h3 className="font-semibold text-gray-800 mb-3">Make a Pick</h3>
+            
+            {/* Search and Filters */}
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  placeholder="Search players..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 placeholder-gray-500"
+                />
+                <select
+                  value={positionFilter}
+                  onChange={(e) => setPositionFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+                >
+                  <option value="ALL">All Positions</option>
+                  {positions.map(pos => (
+                    <option key={pos} value={pos}>{pos}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Selected Player */}
+            {selectedPlayer && (
+              <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="font-semibold">{selectedPlayer.name}</div>
+                    <div className="text-sm text-gray-600">
+                      <span className={`px-2 py-0.5 text-xs rounded ${positionColors[selectedPlayer.position]}`}>
+                        {selectedPlayer.position}
+                      </span>
+                      <span className="ml-2">{selectedPlayer.team || 'FA'}</span>
+                      {selectedPlayer.age && <span className="ml-2">Age {selectedPlayer.age}</span>}
+                      {selectedPlayer.fantasypros_rank && (
+                        <span className="ml-2 text-purple-600">ECR: #{selectedPlayer.fantasypros_rank}</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedPlayer(null)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                {/* Bid Form */}
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <select
+                    value={selectedTeam}
+                    onChange={(e) => setSelectedTeam(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+                  >
+                    <option value="" className="text-gray-500">Select Team</option>
+                    {activeTeams.map(team => {
+                      const ownerName = getOwnerName(team.name);
+                      return (
+                        <option key={team.id} value={team.name}>
+                          {ownerName ? `${ownerName} - ` : ''}{team.name} (Max: ${getMaxBid(team)})
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      placeholder="Bid"
+                      value={bidAmount}
+                      onChange={(e) => setBidAmount(e.target.value)}
+                      min={MIN_BID}
+                      max={selectedTeam ? getMaxBid(draftState.teams[selectedTeam]) : 999}
+                      className="px-3 py-2 border border-gray-300 rounded-lg text-sm flex-1 text-gray-900 placeholder-gray-500"
+                    />
+                    <button
+                      onClick={addDraftPick}
+                      disabled={!selectedTeam || !bidAmount}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    >
+                      Draft
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Available Players Table */}
+            {loadingPlayers ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-gray-600">Loading free agents...</div>
+              </div>
+            ) : sortedPlayers.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                {searchTerm || positionFilter !== 'ALL' 
+                  ? 'No players found matching your filters' 
+                  : 'No free agents available'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full bg-white rounded-lg overflow-hidden">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="px-4 py-3 text-left">
+                        <button onClick={() => toggleSort('name')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
+                          Player <ArrowUpDown size={14} className="ml-1" />
+                        </button>
+                      </th>
+                      <th className="px-4 py-3 text-center text-gray-700">Pos</th>
+                      <th className="px-4 py-3 text-center text-gray-700">Team</th>
+                      <th className="px-4 py-3 text-center">
+                        <button onClick={() => toggleSort('age')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
+                          Age <ArrowUpDown size={14} className="ml-1" />
+                        </button>
+                      </th>
+                      <th className="px-4 py-3 text-center">
+                        <button onClick={() => toggleSort('fantasypros_rank')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
+                          FP ECR <ArrowUpDown size={14} className="ml-1" />
+                        </button>
+                      </th>
+                      <th className="px-4 py-3 text-center">
+                        <button onClick={() => toggleSort('mfl_rank')} className="flex items-center hover:text-gray-900 font-medium text-gray-700">
+                          MFL Rank <ArrowUpDown size={14} className="ml-1" />
+                        </button>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {sortedPlayers.map((player) => {
+                      const mflRank = mflRankings[player.name.toLowerCase()];
+                      
+                      return (
+                        <PlayerHoverCard 
+                          key={player.mfl_id} 
+                          player={player} 
+                          mflRank={mflRank}
+                          onPlayerClick={() => setSelectedPlayer(player)}
+                        >
+                          <tr 
+                            className={`hover:bg-gray-50 ${
+                              selectedPlayer?.mfl_id === player.mfl_id ? 'bg-blue-50' : ''
+                            }`}
+                          >
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <PlayerImage player={player} size={40} />
+                                
+                                <div className="cursor-pointer">
+                                  <div className="font-medium text-gray-900">{player.name}</div>
+                                  {player.draft_year && (
+                                    <div className="text-xs text-gray-500">
+                                      {player.draft_year} Draft
+                                      {player.draft_round && ` - Rd ${player.draft_round}.${player.draft_pick}`}
+                                    </div>
+                                  )}
+                                  {player.injury_status && (
+                                    <div className="text-xs text-red-600 mt-1">
+                                      {player.injury_status}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-center cursor-pointer">
+                              <span className={`px-2 py-1 text-xs rounded ${positionColors[player.position] || 'bg-gray-100'}`}>
+                                {player.position}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm text-gray-700 cursor-pointer">
+                              {player.team || 'FA'}
+                            </td>
+                            <td className="px-4 py-3 text-center text-sm text-gray-700 cursor-pointer">
+                              {player.age || '-'}
+                            </td>
+                            <td className="px-4 py-3 text-center cursor-pointer">
+                              <span className={`font-medium ${
+                                player.fantasypros_rank <= 50 ? 'text-purple-600' :
+                                player.fantasypros_rank <= 100 ? 'text-blue-600' :
+                                player.fantasypros_rank <= 200 ? 'text-gray-600' :
+                                'text-gray-400'
+                              }`}>
+                                {player.fantasypros_rank || '-'}
+                              </span>
+                              {player.fantasypros_tier && (
+                                <span className="ml-1 text-xs text-gray-500">
+                                  (T{player.fantasypros_tier})
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-center cursor-pointer">
+                              {mflRank ? (
+                                <span className="font-medium text-blue-600">
+                                  {mflRank}
+                                </span>
+                              ) : (
+                                <span className="text-gray-300">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        </PlayerHoverCard>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }
