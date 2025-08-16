@@ -64,7 +64,12 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
       let totalSalary = 0;
       let rosterCount = 0;
       teams[teamName].players.forEach(player => {
-        if (player.status !== 'TAXI_SQUAD') {
+        if (player.status === 'TAXI_SQUAD') {
+          // Taxi squad players count at 25% of their salary
+          totalSalary += player.salary * 0.25;
+          // Taxi squad players don't count towards roster slots
+        } else {
+          // Active roster players count at full salary
           totalSalary += player.salary;
           rosterCount++;
         }
@@ -349,7 +354,12 @@ export default function AuctionDraft({ rosters, freeAgents, playerDetails }) {
         let totalSalary = 0;
         let rosterCount = 0;
         teams[teamName].players.forEach(player => {
-          if (player.status !== 'TAXI_SQUAD') {
+          if (player.status === 'TAXI_SQUAD') {
+            // Taxi squad players count at 25% of their salary
+            totalSalary += player.salary * 0.25;
+            // Taxi squad players don't count towards roster slots
+          } else {
+            // Active roster players count at full salary
             totalSalary += player.salary;
             rosterCount++;
           }
